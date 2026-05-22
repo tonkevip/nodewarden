@@ -39,20 +39,31 @@ jobs:
 
           if [ "$TRIGGER" = "schedule" ]; then
             # Auto mode: resolve latest upstream release tag
-            LATEST_TAG=$(curl -s https://api.github.com/repos/shuaiplus/NodeWarden/releases/latest | jq -r .tag_name)
+            # Use GITHUB_TOKEN to avoid unauthenticated API rate limit (60/hr)
+            LATEST_TAG=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              https://api.github.com/repos/shuaiplus/NodeWarden/releases/latest | jq -r .tag_name)
+
             if [ "$LATEST_TAG" = "null" ] || [ -z "$LATEST_TAG" ]; then
-              echo "No release found in upstream."
-              exit 1
+              echo "Failed to resolve release tag via API, falling back to upstream/main latest commit."
+              TARGET_SHA=$(git rev-parse upstream/main)
+              echo "mode=manual" >> $GITHUB_OUTPUT
+              echo "target_sha=$TARGET_SHA" >> $GITHUB_OUTPUT
+              echo "Fallback mode — upstream/main: $TARGET_SHA"
+            else
+              TARGET_SHA=$(git rev-list -n 1 "$LATEST_TAG" 2>/dev/null)
+              if [ -z "$TARGET_SHA" ]; then
+                echo "Tag '$LATEST_TAG' not found after fetch, falling back to upstream/main."
+                TARGET_SHA=$(git rev-parse upstream/main)
+                echo "mode=manual" >> $GITHUB_OUTPUT
+                echo "target_sha=$TARGET_SHA" >> $GITHUB_OUTPUT
+                echo "Fallback mode — upstream/main: $TARGET_SHA"
+              else
+                echo "mode=auto" >> $GITHUB_OUTPUT
+                echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+                echo "target_sha=$TARGET_SHA" >> $GITHUB_OUTPUT
+                echo "Auto mode — latest release: $LATEST_TAG ($TARGET_SHA)"
+              fi
             fi
-            TARGET_SHA=$(git rev-list -n 1 "$LATEST_TAG" 2>/dev/null)
-            if [ -z "$TARGET_SHA" ]; then
-              echo "Tag '$LATEST_TAG' not found after fetch."
-              exit 1
-            fi
-            echo "mode=auto" >> $GITHUB_OUTPUT
-            echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
-            echo "target_sha=$TARGET_SHA" >> $GITHUB_OUTPUT
-            echo "Auto mode — latest release: $LATEST_TAG ($TARGET_SHA)"
 
           elif [ -n "$MANUAL_INPUT" ]; then
             # Manual mode: use provided commit hash or tag
