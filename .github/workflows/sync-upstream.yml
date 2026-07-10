@@ -125,21 +125,20 @@ jobs:
           git checkout main
 
           # GitHub Actions' GITHUB_TOKEN cannot create or update workflow files.
-          # Preserve this fork's workflow directory while syncing upstream source code.
+          # Preserve only this fork's sync workflow; do not keep stale workflow files removed upstream.
           mkdir -p /tmp/nodewarden-workflows-backup
-          cp -a .github/workflows/. /tmp/nodewarden-workflows-backup/ 2>/dev/null || true
+          cp .github/workflows/sync-upstream.yml /tmp/nodewarden-workflows-backup/sync-upstream.yml 2>/dev/null || true
 
-          restore_workflows() {
-            rm -rf .github/workflows
+          restore_sync_workflow() {
             mkdir -p .github/workflows
-            cp -a /tmp/nodewarden-workflows-backup/. .github/workflows/ 2>/dev/null || true
-            git add .github/workflows
+            cp /tmp/nodewarden-workflows-backup/sync-upstream.yml .github/workflows/sync-upstream.yml 2>/dev/null || true
+            git add .github/workflows/sync-upstream.yml
           }
 
           if [ "$MODE" = "manual" ]; then
             # Hard reset allows both upgrade and rollback of source code.
             git reset --hard "$TARGET_SHA"
-            restore_workflows
+            restore_sync_workflow
             if ! git diff --cached --quiet; then
               git commit -m "chore: restore local workflows after sync"
             fi
@@ -150,7 +149,7 @@ jobs:
                 git diff --name-only --diff-filter=U | grep '^.github/workflows/' | while read -r file; do
                   git checkout --ours "$file" 2>/dev/null || git rm -f "$file" 2>/dev/null || true
                 done
-                restore_workflows
+                restore_sync_workflow
               fi
 
               if [ -n "$(git diff --name-only --diff-filter=U)" ]; then
@@ -163,7 +162,7 @@ jobs:
             fi
 
             # Drop upstream workflow changes before pushing with GITHUB_TOKEN.
-            restore_workflows
+            restore_sync_workflow
             if ! git diff --cached --quiet; then
               git commit -m "chore: restore local workflows after sync"
             fi
